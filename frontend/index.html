@@ -696,6 +696,8 @@
         const API_BASE = rawApi.replace(/\/+$/, "");
         let modelStatus = {};
         let currentGradCAMData = null;
+        let analysisRunning = false;
+        let activeRequests = 0;
 
         const DISPLAY_MAP = {
             "abn": "Abnormal (Wall Thickening)",
@@ -705,7 +707,6 @@
             "stn": "Gallstone (Cholelithiasis)"
         };
 
-        // Theme Toggle Handler (Safe Null Check)
         const themeBtn = document.getElementById("theme-toggle");
         if (themeBtn) {
             themeBtn.addEventListener("click", () => {
@@ -718,18 +719,7 @@
                 if (themeIcon) themeIcon.textContent = newTheme === "dark" ? "🌙" : "☀️";
                 if (themeLabel) themeLabel.textContent = newTheme === "dark" ? "Dark Mode" : "Light Mode";
             });
-        }        let modelStatus = {};
-        let currentGradCAMData = null;
-        let analysisRunning = false;
-        let activeRequests = 0;
-
-        const DISPLAY_MAP = {
-            "abn": "Abnormal (Wall Thickening)",
-            "bmt": "Benign Lesion",
-            "malg": "Malignant Carcinoma",
-            "nml": "Normal Gallbladder",
-            "stn": "Gallstone Disease"
-        };
+        }
 
         // Enforce strict single active network request at any time
         async function safePredictFetch(url, options) {
