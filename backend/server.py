@@ -135,9 +135,20 @@ def get_model(model_name):
             }
 
         try:
-            state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=True)
-        except Exception:
-            state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
+            try:
+                state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=True, mmap=True)
+            except Exception:
+                try:
+                    state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=True)
+                except Exception:
+                    state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
+        except Exception as load_err:
+            logging.error(f"Error loading checkpoint file '{checkpoint_file}': {load_err}")
+            return None, {
+                "error": f"Failed to load trained checkpoint for {model_name}",
+                "details": str(load_err),
+                "trained_model_available": False
+            }
 
         model.load_state_dict(state_dict)
         del state_dict
