@@ -29,24 +29,39 @@ class GradCAM:
         output = self.model(input_tensor)
         if class_idx is None:
             class_idx = output.argmax(dim=1).item()
-        output[0, class_idx].backward(retain_graph=True)
+        
+        # Perform backward pass (no retain_graph to immediately release computation graph memory)
+        output[0, class_idx].backward()
+
+        if self.gradients is None or self.activations is None:
+            raise RuntimeError("GradCAM failed to capture activations or gradients.")
 
         gradients = self.gradients[0]        # [C, H, W]
         activations = self.activations[0]    # [C, H, W]
-        weights = gradients.mean(dim=(1, 2))
+        weights = gradients.mean(dim=(1, 2)) # [C]
 
-        cam = torch.zeros(activations.shape[1:], dtype=torch.float32)
-        for i, w in enumerate(weights):
-            cam += w * activations[i]
+        # Vectorized calculation (instant C++ matrix multiplication, zero memory overhead)
+        cam = torch.sum(weights[:, None, None] * activations, dim=0)
 
         cam = F.relu(cam).cpu().numpy()
+        cam_min, cam_max = cam.min(), cam.max()
+        if cam_max > cam_min:
+            cam = (cam - cam_min) / (cam_max - cam_min)
+        else:
+            cam = np.zeros_like(cam)
+
         cam = cv2.resize(cam, (224, 224))
-        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
         return cam, class_idx
 
     def remove_hooks(self):
-        self._fwd_handle.remove()
-        self._bwd_handle.remove()
+        try:
+            self._fwd_handle.remove()
+        except Exception:
+            pass
+        try:
+            self._bwd_handle.remove()
+        except Exception:
+            pass
 
 
 def overlay_heatmap(cam, original_bgr_224):
