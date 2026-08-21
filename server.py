@@ -1,6 +1,9 @@
 import io
 import os
+import gc
 import json
+import time
+import logging
 import torch
 import torch.nn as nn
 import cv2
@@ -11,6 +14,9 @@ from flask import Flask, request, jsonify, send_from_directory
 from pathlib import Path
 
 from gradcam import GradCAM, overlay_heatmap, get_target_layer
+
+# Configure server-side logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 app = Flask(__name__)
 
@@ -41,7 +47,6 @@ MODEL_CHECKPOINTS = {
     "ResNet50": "resnet50_gbc.pth",
 }
 
-# Default class names if class_names.json is unreadable
 DEFAULT_CLASSES = ["abn", "bmt", "malg", "nml", "stn"]
 
 if CLASS_NAMES_FILE.exists():
@@ -53,9 +58,7 @@ if CLASS_NAMES_FILE.exists():
 else:
     CLASS_NAMES = DEFAULT_CLASSES
 
-import gc
-
-# LRU Model Cache (Max 1 cached model to keep RAM usage under 250MB for Render free instances)
+# LRU Model Cache (Strict MAX_CACHED_MODELS=1 for Render CPU memory safety)
 _model_cache = {}
 MAX_CACHED_MODELS = int(os.environ.get("MAX_CACHED_MODELS", 1))
 
@@ -95,46 +98,65 @@ def build_architecture(model_name, num_classes):
 
 def get_model(model_name):
     if model_name in _model_cache:
-        return _model_cache[model_name]
-
-    gc.collect()
+        return _model_cache[model_name], None
 
     num_classes = len(CLASS_NAMES)
-    model = build_architecture(model_name, num_classes)
-    if model is None:
-        return None, f"Unknown architecture selected: '{model_name}'"
 
-    checkpoint_file = MODEL_CHECKPOINTS.get(model_name)
-    checkpoint_path = CHECKPOINT_DIR / checkpoint_file if checkpoint_file else None
-
-    warning = None
-    if checkpoint_path and checkpoint_path.exists():
-        try:
-            try:
-                state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=True)
-            except Exception:
-                state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
-            model.load_state_dict(state_dict)
-            del state_dict
-            gc.collect()
-        except Exception as e:
-            warning = f"Error loading checkpoint '{checkpoint_file}': {str(e)}"
-    else:
-        warning = f"No trained checkpoint found at '{checkpoint_file}'."
-
-    model = model.to(DEVICE)
-    model.eval()
-
-    # Evict oldest model if cache size exceeds limit to save memory
-    while len(_model_cache) >= MAX_CACHED_MODELS:
-        oldest_key = next(iter(_model_cache))
-        del _model_cache[oldest_key]
+    # PRIMARY FIX 1: Evict existing cached model BEFORE constructing/loading the new model
+    if len(_model_cache) >= MAX_CACHED_MODELS:
+        for old_name in list(_model_cache.keys()):
+            logging.info(f"Evicting cached model '{old_name}' before loading '{model_name}'")
+            del _model_cache[old_name]
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    _model_cache[model_name] = (model, warning)
-    return model, warning
+    logging.info(f"Checkpoint load start for {model_name}")
+    checkpoint_file = MODEL_CHECKPOINTS.get(model_name)
+    checkpoint_path = CHECKPOINT_DIR / checkpoint_file if checkpoint_file else None
+
+    # PRIMARY FIX 2 & 10: Fail safely if checkpoint is missing or load fails
+    if not checkpoint_path or not checkpoint_path.exists():
+        err_msg = f"Trained checkpoint file '{checkpoint_file}' not found for model '{model_name}'."
+        logging.error(err_msg)
+        return None, {
+            "error": f"Failed to load trained checkpoint for {model_name}",
+            "details": err_msg,
+            "trained_model_available": False
+        }
+
+    try:
+        model = build_architecture(model_name, num_classes)
+        if model is None:
+            return None, {
+                "error": f"Failed to load trained checkpoint for {model_name}",
+                "details": f"Unknown architecture '{model_name}'.",
+                "trained_model_available": False
+            }
+
+        try:
+            state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=True)
+        except Exception:
+            state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
+
+        model.load_state_dict(state_dict)
+        del state_dict
+        gc.collect()
+
+        model = model.to(DEVICE)
+        model.eval()
+        logging.info(f"Checkpoint load success for {model_name}")
+    except Exception as e:
+        err_msg = f"Exception loading checkpoint '{checkpoint_file}': {str(e)}"
+        logging.error(err_msg)
+        return None, {
+            "error": f"Failed to load trained checkpoint for {model_name}",
+            "details": err_msg,
+            "trained_model_available": False
+        }
+
+    _model_cache[model_name] = model
+    return model, None
 
 
 transform = transforms.Compose([
@@ -171,6 +193,7 @@ def status():
 def predict():
     if request.method == "OPTIONS":
         return "", 204
+
     if request.method == "GET":
         return jsonify({
             "status": "online",
@@ -178,9 +201,12 @@ def predict():
             "models": list(MODEL_CHECKPOINTS.keys())
         })
 
+    start_time = time.time()
     model_name = request.form.get("model", "EfficientNetB0")
     gradcam_param = request.form.get("gradcam", "true").lower()
-    gradcam_enabled = gradcam_param == "true" or gradcam_param == "1"
+    gradcam_enabled = gradcam_param in ("true", "1")
+
+    logging.info(f"Model requested: {model_name} (gradcam={gradcam_enabled})")
 
     if model_name not in MODEL_CHECKPOINTS:
         return jsonify({
@@ -200,54 +226,77 @@ def predict():
     except Exception as e:
         return jsonify({"error": f"Invalid or corrupt image format: {str(e)}"}), 400
 
-    try:
-        model, warning = get_model(model_name)
-        if model is None:
-            return jsonify({"error": warning or "Model failed to load."}), 400
+    model, err_dict = get_model(model_name)
+    if model is None:
+        return jsonify(err_dict), 500
 
+    try:
+        logging.info(f"Inference start for {model_name}")
         with torch.no_grad():
             outputs = model(input_tensor)
             probs = torch.softmax(outputs, dim=1).squeeze().cpu().tolist()
 
         del input_tensor
         del outputs
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+        inference_time = time.time() - start_time
+        logging.info(f"Inference complete for {model_name} in {inference_time:.3f}s")
     except Exception as e:
         _model_cache.clear()
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        return jsonify({"error": f"Model inference error: {str(e)}"}), 500
+        logging.error(f"Inference error for {model_name}: {str(e)}")
+        return jsonify({"error": f"Model inference error for {model_name}: {str(e)}"}), 500
 
     max_idx = probs.index(max(probs))
 
-    # Grad-CAM heatmap visualization (only if requested)
+    # Grad-CAM heatmap visualization
     gradcam_image_b64 = None
     if gradcam_enabled:
+        cam_engine = None
         try:
+            logging.info(f"Grad-CAM start for {model_name}")
             cam_input = transform(image).unsqueeze(0).to(DEVICE)
             cam_input.requires_grad_()
             target_layer = get_target_layer(model, model_name)
             cam_engine = GradCAM(model, target_layer)
             cam, _ = cam_engine.generate(cam_input, class_idx=max_idx)
-            cam_engine.remove_hooks()
 
             img_224 = image.resize((224, 224))
             original_bgr = cv2.cvtColor(np.array(img_224), cv2.COLOR_RGB2BGR)
             overlay_b64 = overlay_heatmap(cam, original_bgr)
             gradcam_image_b64 = f"data:image/jpeg;base64,{overlay_b64}"
+
             del cam_input
+            del cam
+            gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            logging.info(f"Grad-CAM complete for {model_name}")
         except Exception as cam_err:
-            print(f"GradCAM warning for {model_name}: {cam_err}")
+            logging.warning(f"GradCAM warning for {model_name}: {cam_err}")
+            gradcam_image_b64 = None
+        finally:
+            if cam_engine is not None:
+                try:
+                    cam_engine.remove_hooks()
+                except Exception:
+                    pass
+
+    logging.info(f"Memory cleanup complete for {model_name}")
 
     result = {
         "prediction": CLASS_NAMES[max_idx],
         "confidence": float(probs[max_idx] * 100),
         "distribution": dict(zip(CLASS_NAMES, [float(p * 100) for p in probs])),
         "gradcam_image": gradcam_image_b64,
-        "warning": warning
+        "inference_time_seconds": round(inference_time, 3),
+        "trained_model_available": True,
+        "warning": None
     }
     return jsonify(result)
 
