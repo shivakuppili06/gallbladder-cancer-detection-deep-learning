@@ -16,11 +16,24 @@ A deep learning system and web application for classifying gallbladder ultrasoun
   - **🔍 Single Model Triage:** Select any individual model architecture to view diagnostic alerts, confidence metric cards, and multi-class probability distribution.
   - **📊 Compare All Models Ensemble:** Run parallel inference across all 9 models to calculate consensus agreement, animated horizontal confidence bar charts, and staggered breakdown tables.
   - **Segmented View Switcher:** Pill switcher control allowing users to toggle between `📊 Bar Chart View` and `📋 Breakdown Table View` one at a time.
-- **Flask REST API Backend (`server.py`):**
-  - Serves static dashboard at `http://localhost:5000/`.
-  - CORS-enabled REST API with memory error recovery and automatic cache purging.
-- **Streamlit Web UI (`app.py`):**
-  - Alternative Streamlit dashboard interface for quick model evaluation.
+---
+
+## ☁️ Production Deployment Architecture
+
+- **Frontend:** Deployed on **Vercel** (`frontend/index.html`).
+- **Backend:** Deployed on **Render** (`backend/server.py`).
+
+### Render Backend Configuration:
+- **Service Type:** Web Service
+- **Environment:** Python
+- **Branch:** `main`
+- **Root Directory:** `backend`
+- **Build Command:** `pip install -r requirements.txt`
+- **Start Command:** `gunicorn server:app`
+- **Required Environment Variables:**
+  - `PORT`: (Set automatically by Render)
+  - `FRONTEND_URL`: (Optional, set to your Vercel URL e.g. `https://your-app.vercel.app`)
+  - `MAX_CACHED_MODELS`: `3` (LRU memory cache limit)
 
 ---
 

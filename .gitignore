@@ -135,6 +135,7 @@ Thumbs.db
 *.pkl
 *.pickle
 checkpoints/
+!backend/checkpoints/
 logs/
 tensorboard/
 wandb/
