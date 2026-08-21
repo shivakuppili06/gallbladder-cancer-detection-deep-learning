@@ -106,7 +106,10 @@ def get_model(model_name):
     warning = None
     if checkpoint_path and checkpoint_path.exists():
         try:
-            state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=True)
+            try:
+                state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=True)
+            except Exception:
+                state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
             model.load_state_dict(state_dict)
         except Exception as e:
             warning = f"Error loading checkpoint '{checkpoint_file}': {str(e)}"
