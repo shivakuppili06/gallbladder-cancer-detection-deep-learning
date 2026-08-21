@@ -167,10 +167,16 @@ def status():
     return jsonify(result)
 
 
-@app.route("/predict", methods=["POST", "OPTIONS"])
+@app.route("/predict", methods=["GET", "POST", "OPTIONS"])
 def predict():
     if request.method == "OPTIONS":
         return "", 204
+    if request.method == "GET":
+        return jsonify({
+            "status": "online",
+            "message": "The /predict endpoint accepts POST requests with multipart/form-data containing an ultrasound image.",
+            "models": list(MODEL_CHECKPOINTS.keys())
+        })
 
     model_name = request.form.get("model", "EfficientNetB0")
     gradcam_param = request.form.get("gradcam", "true").lower()
