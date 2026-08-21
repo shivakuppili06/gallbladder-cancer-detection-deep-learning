@@ -58,6 +58,8 @@ if CLASS_NAMES_FILE.exists():
 else:
     CLASS_NAMES = DEFAULT_CLASSES
 
+torch.set_grad_enabled(False)
+
 # LRU Model Cache (Strict MAX_CACHED_MODELS=1 for Render CPU memory safety)
 _model_cache = {}
 MAX_CACHED_MODELS = int(os.environ.get("MAX_CACHED_MODELS", 1))
@@ -271,11 +273,12 @@ def predict():
         cam_engine = None
         try:
             logging.info(f"Grad-CAM start for {model_name}")
-            cam_input = transform(image).unsqueeze(0).to(DEVICE)
-            cam_input.requires_grad_()
-            target_layer = get_target_layer(model, model_name)
-            cam_engine = GradCAM(model, target_layer)
-            cam, _ = cam_engine.generate(cam_input, class_idx=max_idx)
+            with torch.enable_grad():
+                cam_input = transform(image).unsqueeze(0).to(DEVICE)
+                cam_input.requires_grad_()
+                target_layer = get_target_layer(model, model_name)
+                cam_engine = GradCAM(model, target_layer)
+                cam, _ = cam_engine.generate(cam_input, class_idx=max_idx)
 
             img_224 = image.resize((224, 224))
             original_bgr = cv2.cvtColor(np.array(img_224), cv2.COLOR_RGB2BGR)
