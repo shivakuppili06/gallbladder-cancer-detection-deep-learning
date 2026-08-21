@@ -686,6 +686,10 @@
          Script Logic & API Connector
          ============================================================ -->
     <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has("api")) {
+            localStorage.setItem("custom_api", urlParams.get("api"));
+        }
         const API_BASE = localStorage.getItem("custom_api") || 
             ((window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && window.location.port !== "5001" 
                 ? "http://localhost:5001" 

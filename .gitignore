@@ -140,6 +140,6 @@ tensorboard/
 wandb/
 mlruns/
 
-# Large data files (uncomment if needed)
-# data/
-# kg_artifacts/
+# Large data files
+data/
+kg_artifacts/
