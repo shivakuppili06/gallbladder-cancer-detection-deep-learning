@@ -687,13 +687,12 @@
          ============================================================ -->
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has("api")) {
-            localStorage.setItem("custom_api", urlParams.get("api"));
-        }
+        const DEFAULT_RENDER_BACKEND = "https://gallbladder-cancer-detection-deep.onrender.com";
+
         let rawApi = localStorage.getItem("custom_api") || 
-            ((window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && window.location.port !== "5001" 
+            ((window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
                 ? "http://localhost:5001" 
-                : "");
+                : DEFAULT_RENDER_BACKEND);
         const API_BASE = rawApi.replace(/\/+$/, "");
         let modelStatus = {};
         let currentGradCAMData = null;
