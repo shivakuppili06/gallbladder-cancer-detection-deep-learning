@@ -53,9 +53,9 @@ if CLASS_NAMES_FILE.exists():
 else:
     CLASS_NAMES = DEFAULT_CLASSES
 
-# LRU Model Cache to prevent RAM exhaustion on serverless/cloud instances
+# LRU Model Cache (Max 2 cached models to keep RAM usage safe for Render free instances)
 _model_cache = {}
-MAX_CACHED_MODELS = int(os.environ.get("MAX_CACHED_MODELS", 3))
+MAX_CACHED_MODELS = int(os.environ.get("MAX_CACHED_MODELS", 2))
 
 
 def build_architecture(model_name, num_classes):
@@ -136,6 +136,8 @@ transform = transforms.Compose([
 
 @app.route("/")
 def index():
+    if (BASE_DIR / "frontend" / "index.html").exists():
+        return send_from_directory(BASE_DIR / "frontend", "index.html")
     return jsonify({
         "status": "online",
         "service": "Gallbladder Cancer Detection AI API",
@@ -161,6 +163,9 @@ def predict():
         return "", 204
 
     model_name = request.form.get("model", "EfficientNetB0")
+    gradcam_param = request.form.get("gradcam", "true").lower()
+    gradcam_enabled = gradcam_param == "true" or gradcam_param == "1"
+
     if model_name not in MODEL_CHECKPOINTS:
         return jsonify({
             "error": f"Invalid model architecture '{model_name}'. Valid options: {list(MODEL_CHECKPOINTS.keys())}"
@@ -187,6 +192,11 @@ def predict():
         with torch.no_grad():
             outputs = model(input_tensor)
             probs = torch.softmax(outputs, dim=1).squeeze().cpu().tolist()
+
+        del input_tensor
+        del outputs
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     except Exception as e:
         _model_cache.clear()
         if torch.cuda.is_available():
@@ -195,22 +205,26 @@ def predict():
 
     max_idx = probs.index(max(probs))
 
-    # Grad-CAM heatmap visualization
+    # Grad-CAM heatmap visualization (only if requested)
     gradcam_image_b64 = None
-    try:
-        cam_input = transform(image).unsqueeze(0).to(DEVICE)
-        cam_input.requires_grad_()
-        target_layer = get_target_layer(model, model_name)
-        cam_engine = GradCAM(model, target_layer)
-        cam, _ = cam_engine.generate(cam_input, class_idx=max_idx)
-        cam_engine.remove_hooks()
+    if gradcam_enabled:
+        try:
+            cam_input = transform(image).unsqueeze(0).to(DEVICE)
+            cam_input.requires_grad_()
+            target_layer = get_target_layer(model, model_name)
+            cam_engine = GradCAM(model, target_layer)
+            cam, _ = cam_engine.generate(cam_input, class_idx=max_idx)
+            cam_engine.remove_hooks()
 
-        img_224 = image.resize((224, 224))
-        original_bgr = cv2.cvtColor(np.array(img_224), cv2.COLOR_RGB2BGR)
-        overlay_b64 = overlay_heatmap(cam, original_bgr)
-        gradcam_image_b64 = f"data:image/jpeg;base64,{overlay_b64}"
-    except Exception as cam_err:
-        print(f"GradCAM warning for {model_name}: {cam_err}")
+            img_224 = image.resize((224, 224))
+            original_bgr = cv2.cvtColor(np.array(img_224), cv2.COLOR_RGB2BGR)
+            overlay_b64 = overlay_heatmap(cam, original_bgr)
+            gradcam_image_b64 = f"data:image/jpeg;base64,{overlay_b64}"
+            del cam_input
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception as cam_err:
+            print(f"GradCAM warning for {model_name}: {cam_err}")
 
     result = {
         "prediction": CLASS_NAMES[max_idx],
