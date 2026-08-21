@@ -29,7 +29,7 @@ A deep learning system and web application for classifying gallbladder ultrasoun
 - **Branch:** `main`
 - **Root Directory:** `backend`
 - **Build Command:** `pip install -r requirements.txt`
-- **Start Command:** `gunicorn server:app`
+- **Start Command:** `gunicorn -b 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 180 server:app`
 - **Required Environment Variables:**
   - `PORT`: (Set automatically by Render)
   - `FRONTEND_URL`: (Optional, set to your Vercel URL e.g. `https://your-app.vercel.app`)
