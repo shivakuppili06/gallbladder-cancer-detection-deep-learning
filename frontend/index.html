@@ -640,7 +640,7 @@
 
                 <div class="control-group">
                     <label class="select-label" for="single-model">Primary Model Architecture:</label>
-                    <select id="single-model" class="custom-select" onchange="runSingleAndEnsemble()">
+                    <select id="single-model" class="custom-select">
                         <option value="ResNet18" selected>ResNet18 (87.8% Accuracy)</option>
                         <option value="DenseNet121">DenseNet121</option>
                         <option value="EfficientNetB0">EfficientNetB0</option>
@@ -654,7 +654,7 @@
                 </div>
 
                 <div class="action-buttons">
-                    <button class="btn-primary" onclick="runSingleAndEnsemble()">
+                    <button class="btn-primary" id="runBtn" onclick="runSingleAndEnsemble()">
                         <span>⚡ Run Analysis</span>
                     </button>
                     <button class="btn-secondary" id="btn-download-pdf" onclick="downloadPDFReport()" disabled>
@@ -718,30 +718,37 @@
                 if (themeIcon) themeIcon.textContent = newTheme === "dark" ? "🌙" : "☀️";
                 if (themeLabel) themeLabel.textContent = newTheme === "dark" ? "Dark Mode" : "Light Mode";
             });
-        }
+        }        let modelStatus = {};
+        let currentGradCAMData = null;
+        let analysisRunning = false;
 
-        // Load Server Model Status
+        const DISPLAY_MAP = {
+            "abn": "Abnormal (Wall Thickening)",
+            "bmt": "Benign Lesion",
+            "malg": "Malignant Carcinoma",
+            "nml": "Normal Gallbladder",
+            "stn": "Gallstone Disease"
+        };
+
+        // Fetch Backend System Health Status
         async function loadStatus() {
             const dot = document.getElementById("status-dot");
             const text = document.getElementById("status-text");
+
             try {
                 const res = await fetch(`${API_BASE}/status`);
-                modelStatus = await res.json();
-                const ready = Object.keys(modelStatus).filter(k => modelStatus[k]);
-                if (dot) dot.className = "status-dot ready";
-                if (text) text.textContent = `${ready.length} Models Online`;
+                if (res.ok) {
+                    modelStatus = await res.json();
+                    const readyCount = Object.values(modelStatus).filter(Boolean).length;
+                    if (dot) dot.className = "status-dot online";
+                    if (text) text.textContent = `Backend Ready (${readyCount}/9 Models)`;
 
-                const select = document.getElementById("single-model");
-                const modelKeys = Object.keys(modelStatus);
-                if (select && modelKeys.length > 0) {
-                    const currentVal = select.value || "ResNet18";
-                    select.innerHTML = "";
-                    modelKeys.forEach(name => {
-                        const opt = document.createElement("option");
-                        opt.value = name;
-                        opt.textContent = modelStatus[name] ? name : `${name} (Not Ready)`;
-                        if (name === currentVal) opt.selected = true;
-                        select.appendChild(opt);
+                    // Populate status badges
+                    Object.keys(modelStatus).forEach(m => {
+                        const badge = document.getElementById(`status-${m}`);
+                        if (badge) {
+                            badge.className = modelStatus[m] ? "model-badge badge-ready" : "model-badge badge-missing";
+                        }
                     });
                 }
             } catch (e) {
@@ -750,7 +757,7 @@
             }
         }
 
-        // Image Upload Handler - Updates Upload Text (No Image Preview per spec)
+        // Image Upload Handler - Updates Upload Text (Only updates UI, NO auto-prediction)
         async function handleImageUpload(sourceInputId) {
             const sourceInput = document.getElementById(sourceInputId);
             if (!sourceInput || !sourceInput.files[0]) return;
@@ -760,192 +767,208 @@
             if (statusText) {
                 statusText.textContent = `Selected: ${file.name}`;
             }
-
-            // Run simultaneous inference across both Single Diagnostic and Ensemble Benchmark
-            runSingleAndEnsemble();
         }
 
         // Unified Single & Ensemble Sequential Inference Engine
         async function runSingleAndEnsemble() {
+            if (analysisRunning) return;
+
             const fileInput = document.getElementById("single-file");
             const resultDiv = document.getElementById("single-result");
             const modelName = document.getElementById("single-model").value;
             const pdfBtn = document.getElementById("btn-download-pdf");
+            const runBtn = document.getElementById("runBtn") || document.querySelector(".btn-primary");
 
             if (!fileInput || !fileInput.files[0]) {
                 resultDiv.innerHTML = `<div class="alert-box alert-warning">⚠️ Please select an ultrasound image first.</div>`;
                 return;
             }
 
-            const file = fileInput.files[0];
-            const inputUrl = URL.createObjectURL(file);
+            analysisRunning = true;
+            if (runBtn) {
+                runBtn.disabled = true;
+                runBtn.style.opacity = "0.6";
+                runBtn.style.cursor = "not-allowed";
+            }
 
-            // STEP 1: Run Primary Model with Grad-CAM Enabled
-            resultDiv.innerHTML = `
-                <div class="alert-box alert-info">
-                    <span>⏳ Step 1/2: Analyzing Primary Model (${modelName}) with Grad-CAM...</span>
-                </div>`;
-
-            const fdSingle = new FormData();
-            fdSingle.append("model", modelName);
-            fdSingle.append("image", file);
-            fdSingle.append("gradcam", "true");
-
-            let singleResult = null;
             try {
-                const singleRes = await fetch(`${API_BASE}/predict`, { method: "POST", body: fdSingle });
-                singleResult = await singleRes.json();
-            } catch (e) {
-                resultDiv.innerHTML = `<div class="alert-box alert-danger">❌ Cannot reach server at backend API (${API_BASE}). Please verify server is online.</div>`;
-                return;
-            }
+                const file = fileInput.files[0];
+                const inputUrl = URL.createObjectURL(file);
 
-            if (!singleResult || singleResult.error) {
-                resultDiv.innerHTML = `<div class="alert-box alert-danger">❌ ${singleResult ? singleResult.error : 'Primary model inference failed.'}</div>`;
-                return;
-            }
-
-            // Enable export PDF button
-            if (pdfBtn) pdfBtn.disabled = false;
-            if (singleResult.gradcam_image) {
-                currentGradCAMData = singleResult.gradcam_image;
-            }
-
-            // STEP 2: Run 9-Model Ensemble Benchmark Sequentially with Grad-CAM Disabled
-            const ALL_MODELS = [
-                "EfficientNetB0", "EfficientNetB1", "EfficientNetB2", "EfficientNetB3", "EfficientNetB4",
-                "DenseNet121", "MobileNetV2", "ResNet18", "ResNet50"
-            ];
-
-            const ensembleResults = [];
-
-            for (let i = 0; i < ALL_MODELS.length; i++) {
-                const mName = ALL_MODELS[i];
+                // STEP 1: Run Primary Model with Grad-CAM Enabled
                 resultDiv.innerHTML = `
                     <div class="alert-box alert-info">
-                        <span>⏳ Step 2/2: Running 9-Model Benchmark — ${mName} (${i + 1}/${ALL_MODELS.length})...</span>
+                        <span>⏳ Step 1/2: Analyzing Primary Model (${modelName}) with Grad-CAM...</span>
                     </div>`;
 
-                const fd = new FormData();
-                fd.append("model", mName);
-                fd.append("image", file);
-                fd.append("gradcam", "false");
+                const fdSingle = new FormData();
+                fdSingle.append("model", modelName);
+                fdSingle.append("image", file);
+                fdSingle.append("gradcam", "true");
 
-                let rJson = null;
-                let ok = false;
+                let singleResult = null;
+                try {
+                    const singleRes = await fetch(`${API_BASE}/predict`, { method: "POST", body: fdSingle });
+                    singleResult = await singleRes.json();
+                } catch (e) {
+                    resultDiv.innerHTML = `<div class="alert-box alert-danger">❌ Cannot reach the AI backend. Please try again.</div>`;
+                    return;
+                }
 
-                // Try request with retry on temporary network failure
-                for (let attempt = 0; attempt < 2; attempt++) {
-                    try {
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 sec timeout
-                        const r = await fetch(`${API_BASE}/predict`, { method: "POST", body: fd, signal: controller.signal });
-                        clearTimeout(timeoutId);
-                        if (r.ok) {
-                            rJson = await r.json();
-                            if (rJson && !rJson.error) {
-                                ok = true;
-                                break;
+                if (!singleResult || singleResult.error) {
+                    resultDiv.innerHTML = `<div class="alert-box alert-danger">❌ ${singleResult ? singleResult.error : 'Primary model inference failed.'}</div>`;
+                    return;
+                }
+
+                // Enable export PDF button
+                if (pdfBtn) pdfBtn.disabled = false;
+                if (singleResult.gradcam_image) {
+                    currentGradCAMData = singleResult.gradcam_image;
+                }
+
+                // STEP 2: Run 9-Model Ensemble Benchmark Sequentially with Grad-CAM Disabled
+                const ALL_MODELS = [
+                    "EfficientNetB0", "EfficientNetB1", "EfficientNetB2", "EfficientNetB3", "EfficientNetB4",
+                    "DenseNet121", "MobileNetV2", "ResNet18", "ResNet50"
+                ];
+
+                const ensembleResults = [];
+
+                for (let i = 0; i < ALL_MODELS.length; i++) {
+                    const mName = ALL_MODELS[i];
+                    resultDiv.innerHTML = `
+                        <div class="alert-box alert-info">
+                            <span>⏳ Step 2/2: Running 9-Model Benchmark — ${mName} (${i + 1}/${ALL_MODELS.length})...</span>
+                        </div>`;
+
+                    const fd = new FormData();
+                    fd.append("model", mName);
+                    fd.append("image", file);
+                    fd.append("gradcam", "false");
+
+                    let rJson = null;
+                    let ok = false;
+
+                    // Try request with retry on temporary network failure
+                    for (let attempt = 0; attempt < 2; attempt++) {
+                        try {
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => controller.abort(), 25000);
+                            const r = await fetch(`${API_BASE}/predict`, { method: "POST", body: fd, signal: controller.signal });
+                            clearTimeout(timeoutId);
+                            if (r.ok) {
+                                rJson = await r.json();
+                                if (rJson && !rJson.error) {
+                                    ok = true;
+                                    break;
+                                }
                             }
+                        } catch (err) {
+                            console.warn(`Attempt ${attempt + 1} for ${mName} failed:`, err);
                         }
-                    } catch (err) {
-                        console.warn(`Attempt ${attempt + 1} for ${mName} failed:`, err);
+                    }
+
+                    if (ok && rJson) {
+                        ensembleResults.push({ model: mName, prediction: rJson.prediction, confidence: rJson.confidence, ok: true });
+                    } else {
+                        ensembleResults.push({ model: mName, prediction: "Unavailable", confidence: 0, ok: false });
                     }
                 }
 
-                if (ok && rJson) {
-                    ensembleResults.push({ model: mName, prediction: rJson.prediction, confidence: rJson.confidence, ok: true });
-                } else {
-                    ensembleResults.push({ model: mName, prediction: "Unavailable", confidence: 0, ok: false });
+                // Render Final Comprehensive Report
+                const labelName = DISPLAY_MAP[singleResult.prediction] || singleResult.prediction;
+
+                let html = `
+                <div id="pdf-report-container" style="background:var(--bg-card); padding:24px; border-radius:var(--radius-lg); border:1px solid var(--border-color);">
+                    
+                    <!-- Report Header -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+                        <div>
+                            <div style="font-size:16px; font-weight:800; color:var(--text-heading);">📋 Comprehensive Diagnostic & Ensemble Report</div>
+                            <div style="font-size:12px; color:var(--text-muted);">Timestamp: ${new Date().toLocaleString()}</div>
+                        </div>
+                    </div>`;
+
+                // Grad-CAM Side-by-Side Images
+                if (singleResult.gradcam_image) {
+                    html += `
+                    <div style="margin: 20px 0;">
+                        <div style="font-size:13px; font-weight:700; color:var(--text-heading); margin-bottom:10px;">
+                            🔍 Explainable AI · Side-by-Side Original Input & Grad-CAM Attention Heatmap
+                        </div>
+                        <div class="gradcam-container">
+                            <div class="gradcam-card">
+                                <div class="gradcam-card-title">Uploaded Ultrasound Image</div>
+                                <img src="${inputUrl}" class="gradcam-image" alt="Input Image">
+                            </div>
+                            <div class="gradcam-card">
+                                <div class="gradcam-card-title accent">Grad-CAM Attention Heatmap</div>
+                                <img src="${singleResult.gradcam_image}" class="gradcam-image" alt="Grad-CAM Heatmap">
+                            </div>
+                        </div>
+                    </div>`;
+                }
+
+                // Single Model Probability Distribution HTML
+                let distHtml = `<div style="font-size:13px; font-weight:700; color:var(--text-heading); margin-bottom:12px;">Probability Distribution (${modelName})</div>`;
+                Object.keys(singleResult.distribution).forEach(cls => {
+                    const pct = singleResult.distribution[cls].toFixed(1);
+                    const isTop = cls === singleResult.prediction;
+                    distHtml += `
+                    <div class="dist-row">
+                        <div class="dist-meta">
+                            <span>${DISPLAY_MAP[cls] || cls}</span>
+                            <span>${pct}%</span>
+                        </div>
+                        <div class="dist-bar-track">
+                            <div class="dist-bar-fill ${isTop ? 'top-class' : ''}" style="width: ${pct}%"></div>
+                        </div>
+                    </div>`;
+                });
+
+                // Ensemble Comparison Table HTML
+                let ensembleHtml = `
+                <div style="font-size:13px; font-weight:700; color:var(--text-heading); margin-bottom:12px;">
+                    📊 Ensemble Benchmark: All 9 Architectures Comparison
+                </div>
+                <table style="width:100%; border-collapse:collapse; background:var(--bg-input); border-radius:var(--radius-md); overflow:hidden;">
+                    <thead>
+                        <tr style="border-bottom:2px solid var(--border-color); text-align:left; background:var(--bg-card-hover);">
+                            <th style="padding:10px; color:var(--text-heading); font-size:12px;">Model Architecture</th>
+                            <th style="padding:10px; color:var(--text-heading); font-size:12px;">Predicted Diagnosis</th>
+                            <th style="padding:10px; color:var(--text-heading); font-size:12px;">Confidence Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+                ensembleResults.forEach(r => {
+                    const predLbl = r.ok ? (DISPLAY_MAP[r.prediction] || r.prediction) : "Unavailable";
+                    const isSelected = r.model === modelName;
+                    const confText = r.ok ? `${r.confidence.toFixed(1)}%` : "N/A";
+                    ensembleHtml += `
+                    <tr style="border-bottom:1px solid var(--border-color); ${isSelected ? 'background:rgba(161,138,115,0.25);' : ''}">
+                        <td style="padding:8px 10px; font-size:12px; font-weight:700; color:var(--text-heading);">${r.model} ${isSelected ? '⚡ (Selected)' : ''}</td>
+                        <td style="padding:8px 10px; font-size:12px;">${predLbl}</td>
+                        <td style="padding:8px 10px; font-size:12px; font-weight:700; color:var(--primary-text);">${confText}</td>
+                    </tr>`;
+                });
+                ensembleHtml += `</tbody></table>`;
+
+                // Render Probability Distribution & Ensemble Benchmark side-by-side
+                html += `
+                <div class="results-side-by-side" style="display:grid; grid-template-columns: 1fr 1.2fr; gap:20px; margin-top:20px; align-items:start;">
+                    <div style="background:var(--bg-input); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">${distHtml}</div>
+                    <div style="background:var(--bg-input); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">${ensembleHtml}</div>
+                </div></div>`;
+                resultDiv.innerHTML = html;
+            } finally {
+                analysisRunning = false;
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.style.opacity = "1";
+                    runBtn.style.cursor = "pointer";
                 }
             }
-
-            // Render Final Comprehensive Report
-            const labelName = DISPLAY_MAP[singleResult.prediction] || singleResult.prediction;
-
-            let html = `
-            <div id="pdf-report-container" style="background:var(--bg-card); padding:24px; border-radius:var(--radius-lg); border:1px solid var(--border-color);">
-                
-                <!-- Report Header -->
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
-                    <div>
-                        <div style="font-size:16px; font-weight:800; color:var(--text-heading);">📋 Comprehensive Diagnostic & Ensemble Report</div>
-                        <div style="font-size:12px; color:var(--text-muted);">Timestamp: ${new Date().toLocaleString()}</div>
-                    </div>
-                </div>`;
-
-            // Grad-CAM Side-by-Side Images
-            if (singleResult.gradcam_image) {
-                html += `
-                <div style="margin: 20px 0;">
-                    <div style="font-size:13px; font-weight:700; color:var(--text-heading); margin-bottom:10px;">
-                        🔍 Explainable AI · Side-by-Side Original Input & Grad-CAM Attention Heatmap
-                    </div>
-                    <div class="gradcam-container">
-                        <div class="gradcam-card">
-                            <div class="gradcam-card-title">Uploaded Ultrasound Image</div>
-                            <img src="${inputUrl}" class="gradcam-image" alt="Input Image">
-                        </div>
-                        <div class="gradcam-card">
-                            <div class="gradcam-card-title accent">Grad-CAM Attention Heatmap</div>
-                            <img src="${singleResult.gradcam_image}" class="gradcam-image" alt="Grad-CAM Heatmap">
-                        </div>
-                    </div>
-                </div>`;
-            }
-
-            // Single Model Probability Distribution HTML
-            let distHtml = `<div style="font-size:13px; font-weight:700; color:var(--text-heading); margin-bottom:12px;">Probability Distribution (${modelName})</div>`;
-            Object.keys(singleResult.distribution).forEach(cls => {
-                const pct = singleResult.distribution[cls].toFixed(1);
-                const isTop = cls === singleResult.prediction;
-                distHtml += `
-                <div class="dist-row">
-                    <div class="dist-meta">
-                        <span>${DISPLAY_MAP[cls] || cls}</span>
-                        <span>${pct}%</span>
-                    </div>
-                    <div class="dist-bar-track">
-                        <div class="dist-bar-fill ${isTop ? 'top-class' : ''}" style="width: ${pct}%"></div>
-                    </div>
-                </div>`;
-            });
-
-            // Ensemble Comparison Table HTML
-            let ensembleHtml = `
-            <div style="font-size:13px; font-weight:700; color:var(--text-heading); margin-bottom:12px;">
-                📊 Ensemble Benchmark: All 9 Architectures Comparison
-            </div>
-            <table style="width:100%; border-collapse:collapse; background:var(--bg-input); border-radius:var(--radius-md); overflow:hidden;">
-                <thead>
-                    <tr style="border-bottom:2px solid var(--border-color); text-align:left; background:var(--bg-card-hover);">
-                        <th style="padding:10px; color:var(--text-heading); font-size:12px;">Model Architecture</th>
-                        <th style="padding:10px; color:var(--text-heading); font-size:12px;">Predicted Diagnosis</th>
-                        <th style="padding:10px; color:var(--text-heading); font-size:12px;">Confidence Score</th>
-                    </tr>
-                </thead>
-                <tbody>`;
-
-            ensembleResults.forEach(r => {
-                const predLbl = r.ok ? (DISPLAY_MAP[r.prediction] || r.prediction) : "Unavailable";
-                const isSelected = r.model === modelName;
-                const confText = r.ok ? `${r.confidence.toFixed(1)}%` : "N/A";
-                ensembleHtml += `
-                <tr style="border-bottom:1px solid var(--border-color); ${isSelected ? 'background:rgba(161,138,115,0.25);' : ''}">
-                    <td style="padding:8px 10px; font-size:12px; font-weight:700; color:var(--text-heading);">${r.model} ${isSelected ? '⚡ (Selected)' : ''}</td>
-                    <td style="padding:8px 10px; font-size:12px;">${predLbl}</td>
-                    <td style="padding:8px 10px; font-size:12px; font-weight:700; color:var(--primary-text);">${confText}</td>
-                </tr>`;
-            });
-            ensembleHtml += `</tbody></table>`;
-
-            // Render Probability Distribution & Ensemble Benchmark side-by-side
-            html += `
-            <div class="results-side-by-side" style="display:grid; grid-template-columns: 1fr 1.2fr; gap:20px; margin-top:20px; align-items:start;">
-                <div style="background:var(--bg-input); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">${distHtml}</div>
-                <div style="background:var(--bg-input); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">${ensembleHtml}</div>
-            </div></div>`;
-            resultDiv.innerHTML = html;
         }
 
         // Download Grad-CAM Image Handler
