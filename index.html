@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Learning–Based Gallbladder Disease Classification from Ultrasound Images</title>
+    <!-- Prevent theme/palette flash before render -->
+    <script>
+        (function () {
+            const savedPalette = localStorage.getItem("palette") || "4";
+            document.documentElement.setAttribute("data-palette", savedPalette);
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <!-- PDF Generation & HTML Canvas Export Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        /* ============================================================
+           5 Curated Medical Color Palettes
+           ============================================================ */
+        
+        /* 1. Medical Blue + Teal */
+        [data-palette="1"] {
+            --bg-base: #F8FAFC;
+            --bg-sidebar: #FFFFFF;
+            --bg-card: #FFFFFF;
+            --bg-card-hover: #F1F5F9;
+            --bg-input: #E0F2FE;
+            --border-color: #CBD5E1;
+            --border-hover: #2563EB;
+            --text-heading: #0F172A;
+            --text-body: #0F172A;
+            --text-muted: #64748B;
+            --primary: #2563EB;
+            --primary-glow: rgba(37, 99, 235, 0.2);
+            --primary-text: #2563EB;
+            --gold: #0D9488;
+            --danger: #DC2626;
+            --danger-bg: #FEE2E2;
+            --warning: #F59E0B;
+            --warning-bg: #FEF3C7;
+            --success: #16A34A;
+            --success-bg: #DCFCE7;
+            --info: #2563EB;
+            --info-bg: #E0F2FE;
+        }
+
+        /* 2. Premium AI Healthcare */
+        [data-palette="2"] {
+            --bg-base: #F8FAFC;
+            --bg-sidebar: #FFFFFF;
+            --bg-card: #FFFFFF;
+            --bg-card-hover: #F1F5F9;
+            --bg-input: #CFFAFE;
+            --border-color: #CBD5E1;
+            --border-hover: #06B6D4;
+            --text-heading: #0F172A;
+            --text-body: #0F172A;
+            --text-muted: #64748B;
+            --primary: #1D4ED8;
+            --primary-glow: rgba(29, 78, 216, 0.2);
+            --primary-text: #1D4ED8;
+            --gold: #06B6D4;
+            --danger: #EF4444;
+            --danger-bg: #FEE2E2;
+            --warning: #F59E0B;
+            --warning-bg: #FEF3C7;
+            --success: #10B981;
+            --success-bg: #D1FAE5;
+            --info: #06B6D4;
+            --info-bg: #CFFAFE;
+        }
+
+        /* 3. Calm Patient */
+        [data-palette="3"] {
+            --bg-base: #F0FDFA;
+            --bg-sidebar: #FFFFFF;
+            --bg-card: #FFFFFF;
+            --bg-card-hover: #CCFBF1;
+            --bg-input: #E6FFFA;
+            --border-color: #99F6E4;
+            --border-hover: #0F766E;
+            --text-heading: #134E4A;
+            --text-body: #134E4A;
+            --text-muted: #64748B;
+            --primary: #0F766E;
+            --primary-glow: rgba(15, 118, 110, 0.2);
+            --primary-text: #0F766E;
+            --gold: #2563EB;
+            --danger: #DC2626;
+            --danger-bg: #FEE2E2;
+            --warning: #F59E0B;
+            --warning-bg: #FEF3C7;
+            --success: #16A34A;
+            --success-bg: #DCFCE7;
+            --info: #2563EB;
+            --info-bg: #DBEAFE;
+        }
+
+        /* 4. Dark Doctor Dashboard (Default) */
+        :root, [data-palette="4"] {
+            --bg-base: #0B1220;
+            --bg-sidebar: #111827;
+            --bg-card: #1E293B;
+            --bg-card-hover: #334155;
+            --bg-input: #111827;
+            --border-color: #334155;
+            --border-hover: #22D3EE;
+            --text-heading: #F8FAFC;
+            --text-body: #F8FAFC;
+            --text-muted: #94A3B8;
+            --primary: #3B82F6;
+            --primary-glow: rgba(59, 130, 246, 0.3);
+            --primary-text: #22D3EE;
+            --gold: #22D3EE;
+            --danger: #F87171;
+            --danger-bg: rgba(248, 113, 113, 0.15);
+            --warning: #FBBF24;
+            --warning-bg: rgba(251, 191, 36, 0.15);
+            --success: #34D399;
+            --success-bg: rgba(52, 211, 153, 0.15);
+            --info: #22D3EE;
+            --info-bg: rgba(34, 211, 238, 0.15);
+            --shadow-lg: 0 20px 45px -10px rgba(0, 0, 0, 0.6);
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+        }
+
+        /* 5. Minimal Clinical */
+        [data-palette="5"] {
+            --bg-base: #F8FAFC;
+            --bg-sidebar: #FFFFFF;
+            --bg-card: #FFFFFF;
+            --bg-card-hover: #F1F5F9;
+            --bg-input: #F1F5F9;
+            --border-color: #E2E8F0;
+            --border-hover: #0369A1;
+            --text-heading: #0F172A;
+            --text-body: #0F172A;
+            --text-muted: #64748B;
+            --primary: #0369A1;
+            --primary-glow: rgba(3, 105, 161, 0.2);
+            --primary-text: #0369A1;
+            --gold: #14B8A6;
+            --danger: #DC2626;
+            --danger-bg: #FEE2E2;
+            --warning: #F59E0B;
+            --warning-bg: #FEF3C7;
+            --success: #16A34A;
+            --success-bg: #DCFCE7;
+            --info: #0891B2;
+            --info-bg: #E0F2FE;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+        }
+
+        body {
+            background: var(--bg-base);
+            color: var(--text-body);
+            font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            overflow-x: hidden;
+        }
+
+        /* ============================================================
+           3-Section Vertical Layout Architecture (No Sidebar)
+           ============================================================ */
+        .app-container {
+            width: 100%;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* 2-Column Balanced Dashboard Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .controls-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .control-group {
+            margin-top: 4px;
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 6px;
+        }
+
+        /* Component Card Container */
+        .component-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .component-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .component-title {
+            font-size: 16px;
+            font-weight: 800;
+            color: var(--text-heading);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* SECTION 1: Top Header Bar */
+        .top-header {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px 28px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            text-align: center;
+        }
+
+        .header-title h1 {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text-heading);
+            letter-spacing: -0.3px;
+            line-height: 1.35;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-heading);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--warning);
+        }
+
+        .status-dot.ready {
+            background: #10B981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+        }
+
+        .status-dot.error {
+            background: #F43F5E;
+        }
+
+        .theme-toggle-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-heading);
+            padding: 8px 14px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .theme-toggle-btn:hover {
+            border-color: var(--border-hover);
+        }
+
+        /* SECTION 2: Middle Section Grid (Upload + Downloads) */
+        .middle-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            align-items: stretch;
+        }
+
+        @media (max-width: 900px) {
+            .middle-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Upload Component Elements (No Image Preview) */
+        .dropzone {
+            border: 2px dashed var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-input);
+            padding: 24px 16px;
+            text-align: center;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.25s ease;
+        }
+
+        .dropzone:hover {
+            border-color: var(--primary);
+            background: var(--bg-card-hover);
+        }
+
+        .dropzone input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .dropzone-icon {
+            font-size: 28px;
+            margin-bottom: 6px;
+        }
+
+        .dropzone-text {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-heading);
+        }
+
+        .dropzone-subtext {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Model Select Controls */
+        .select-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-heading);
+            margin: 16px 0 6px 0;
+            display: block;
+        }
+
+        .custom-select {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-heading);
+            padding: 10px 14px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 600;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .custom-select:focus {
+            border-color: var(--primary);
+        }
+
+        .btn-primary {
+            width: 100%;
+            background: linear-gradient(135deg, #06B6D4, #6366F1);
+            color: #FFFFFF;
+            border: none;
+            padding: 12px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+            margin-top: 16px;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #0284C7, #4F46E5);
+            box-shadow: 0 6px 25px rgba(99, 102, 241, 0.45);
+        }
+
+        .btn-secondary {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-heading);
+            padding: 12px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary-text);
+            background: var(--bg-card-hover);
+        }
+
+        .btn-secondary:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .download-actions-flex {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        /* SECTION 3: Bottom Results Dashboard Layout */
+        .gradcam-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin: 20px 0;
+        }
+
+        @media (max-width: 768px) {
+            .gradcam-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .gradcam-card {
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            text-align: center;
+        }
+
+        .gradcam-card-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .gradcam-card-title.accent {
+            color: var(--primary-text);
+        }
+
+        .gradcam-image {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            display: block;
+        }
+
+        /* Confidence Progress Bar Component */
+        .dist-row {
+            margin-bottom: 12px;
+        }
+
+        .dist-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .dist-bar-track {
+            height: 10px;
+            background: var(--bg-input);
+            border-radius: 5px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .dist-bar-fill {
+            height: 100%;
+            border-radius: 5px;
+            background: var(--primary);
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .dist-bar-fill.top-class {
+            background: linear-gradient(90deg, #06B6D4, #10B981);
+        }
+
+        /* Alert Callout Cards */
+        .alert-box {
+            padding: 16px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border: 1px solid transparent;
+        }
+
+        .alert-danger {
+            background: var(--danger-bg);
+            color: var(--danger);
+            border-color: rgba(244, 63, 94, 0.3);
+        }
+
+        .alert-success {
+            background: var(--success-bg);
+            color: var(--success);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .alert-warning {
+            background: var(--warning-bg);
+            color: var(--warning);
+            border-color: rgba(245, 158, 11, 0.3);
+        }
+
+        .alert-info {
+            background: var(--info-bg);
+            color: var(--info);
+            border-color: rgba(56, 189, 248, 0.3);
+        }
+
+        /* Print / PDF Export System */
+        @media print {
+            body {
+                background: #0C121E !important;
+                color: #F8FAFC !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            .top-header,
+            .middle-grid,
+            .btn-primary,
+            .btn-secondary,
+            .theme-toggle-btn,
+            .dropzone,
+            select,
+            label {
+                display: none !important;
+            }
+
+            .app-container {
+                max-width: 100% !important;
+                padding: 0 !important;
+            }
+
+            #pdf-report-container {
+                border: none !important;
+                box-shadow: none !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-container">
+
+        <!-- ============================================================
+             SECTION 1 (TOP): Executive Header Bar
+             ============================================================ -->
+        <header class="top-header">
+            <div class="header-title">
+                <h1>Deep Learning–Based Gallbladder Disease Classification from Ultrasound Images</h1>
+            </div>
+        </header>
+
+        <!-- ============================================================
+             SECTION 2: Balanced 2-Column Dashboard Grid Layout
+             ============================================================ -->
+        <main class="dashboard-grid">
+
+            <!-- LEFT COLUMN: Diagnostic Controls & Image Upload -->
+            <aside class="component-card controls-sidebar">
+                <div class="component-header">
+                    <div class="component-title">
+                        <span>📥 Diagnostic Controls</span>
+                    </div>
+                </div>
+
+                <div class="dropzone" id="single-dropzone">
+                    <input type="file" id="single-file" accept="image/png, image/jpeg, image/jpg"
+                        onchange="handleImageUpload('single-file')">
+                    <div class="dropzone-icon">📁</div>
+                    <div class="dropzone-text" id="upload-status-text">Click or Drag Ultrasound Image</div>
+                    <div class="dropzone-subtext">PNG, JPG, JPEG (224×224)</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="select-label" for="single-model">Primary Model Architecture:</label>
+                    <select id="single-model" class="custom-select" onchange="runSingleAndEnsemble()">
+                        <option value="ResNet18" selected>ResNet18 (87.8% Accuracy)</option>
+                        <option value="DenseNet121">DenseNet121</option>
+                        <option value="EfficientNetB0">EfficientNetB0</option>
+                        <option value="EfficientNetB1">EfficientNetB1</option>
+                        <option value="EfficientNetB2">EfficientNetB2</option>
+                        <option value="EfficientNetB3">EfficientNetB3</option>
+                        <option value="EfficientNetB4">EfficientNetB4</option>
+                        <option value="MobileNetV2">MobileNetV2</option>
+                        <option value="ResNet50">ResNet50</option>
+                    </select>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn-primary" onclick="runSingleAndEnsemble()">
+                        <span>⚡ Run Analysis</span>
+                    </button>
+                    <button class="btn-secondary" id="btn-download-pdf" onclick="downloadPDFReport()" disabled>
+                        <span>📄 Download Report (PDF)</span>
+                    </button>
+                </div>
+            </aside>
+
+            <!-- RIGHT COLUMN: Diagnostic Output, Grad-CAM & Ensemble Benchmark -->
+            <section class="component-card results-main-panel">
+                <div class="component-header">
+                    <div class="component-title">
+                        <span>📊 Diagnostic Output & 9-Model Ensemble Benchmark</span>
+                    </div>
+                </div>
+
+                <div id="single-result">
+                    <div class="alert-box alert-info">
+                        <span>ℹ️ Upload an ultrasound image on the left to view clinical predictions, Grad-CAM heatmaps, probability distribution, and ensemble benchmarks.</span>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+    </div>
+
+    <!-- ============================================================
+         Script Logic & API Connector
+         ============================================================ -->
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const DEFAULT_RENDER_BACKEND = "https://gallbladder-cancer-detection-deep.onrender.com";
+
+        let rawApi = localStorage.getItem("custom_api") || 
+            ((window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+                ? "http://localhost:5001" 
+                : DEFAULT_RENDER_BACKEND);
+        const API_BASE = rawApi.replace(/\/+$/, "");
+        let modelStatus = {};
+        let currentGradCAMData = null;
+
+        const DISPLAY_MAP = {
+            "abn": "Abnormal (Wall Thickening)",
+            "bmt": "Benign Lesion",
+            "malg": "Malignant Carcinoma",
+            "nml": "Normal Gallbladder",
+            "stn": "Gallstone (Cholelithiasis)"
+        };
+
+        // Theme Toggle Handler (Safe Null Check)
+        const themeBtn = document.getElementById("theme-toggle");
+        if (themeBtn) {
+            themeBtn.addEventListener("click", () => {
+                const currentTheme = document.documentElement.getAttribute("data-theme");
+                const newTheme = currentTheme === "dark" ? "light" : "dark";
+                document.documentElement.setAttribute("data-theme", newTheme);
+                localStorage.setItem("theme", newTheme);
+                const themeIcon = document.getElementById("theme-icon");
+                const themeLabel = document.getElementById("theme-label");
+                if (themeIcon) themeIcon.textContent = newTheme === "dark" ? "🌙" : "☀️";
+                if (themeLabel) themeLabel.textContent = newTheme === "dark" ? "Dark Mode" : "Light Mode";
+            });
+        }
+
+        // Load Server Model Status
+        async function loadStatus() {
+            const dot = document.getElementById("status-dot");
+            const text = document.getElementById("status-text");
+            try {
+                const res = await fetch(`${API_BASE}/status`);
+                modelStatus = await res.json();
+                const ready = Object.keys(modelStatus).filter(k => modelStatus[k]);
+                if (dot) dot.className = "status-dot ready";
+                if (text) text.textContent = `${ready.length} Models Online`;
+
+                const select = document.getElementById("single-model");
+                const modelKeys = Object.keys(modelStatus);
+                if (select && modelKeys.length > 0) {
+                    const currentVal = select.value || "ResNet18";
+                    select.innerHTML = "";
+                    modelKeys.forEach(name => {
+                        const opt = document.createElement("option");
+                        opt.value = name;
+                        opt.textContent = modelStatus[name] ? name : `${name} (Not Ready)`;
+                        if (name === currentVal) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                if (dot) dot.className = "status-dot error";
+                if (text) text.textContent = "Server Offline (5001)";
+            }
+        }
+
+        // Image Upload Handler - Updates Upload Text (No Image Preview per spec)
+        async function handleImageUpload(sourceInputId) {
+            const sourceInput = document.getElementById(sourceInputId);
+            if (!sourceInput || !sourceInput.files[0]) return;
+            const file = sourceInput.files[0];
+
+            const statusText = document.getElementById("upload-status-text");
+            if (statusText) {
+                statusText.textContent = `Selected: ${file.name}`;
+            }
+
+            // Run simultaneous inference across both Single Diagnostic and Ensemble Benchmark
+            runSingleAndEnsemble();
+        }
+
+        // Unified Single & Ensemble Sequential Inference Engine
+        async function runSingleAndEnsemble() {
+            const fileInput = document.getElementById("single-file");
+            const resultDiv = document.getElementById("single-result");
+            const modelName = document.getElementById("single-model").value;
+            const pdfBtn = document.getElementById("btn-download-pdf");
+
+            if (!fileInput || !fileInput.files[0]) {
+                resultDiv.innerHTML = `<div class="alert-box alert-warning">⚠️ Please select an ultrasound image first.</div>`;
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const inputUrl = URL.createObjectURL(file);
+
+            // STEP 1: Run Primary Model with Grad-CAM Enabled
+            resultDiv.innerHTML = `
+                <div class="alert-box alert-info">
+                    <span>⏳ Step 1/2: Analyzing Primary Model (${modelName}) with Grad-CAM...</span>
+                </div>`;
+
+            const fdSingle = new FormData();
+            fdSingle.append("model", modelName);
+            fdSingle.append("image", file);
+            fdSingle.append("gradcam", "true");
+
+            let singleResult = null;
+            try {
+                const singleRes = await fetch(`${API_BASE}/predict`, { method: "POST", body: fdSingle });
+                singleResult = await singleRes.json();
+            } catch (e) {
+                resultDiv.innerHTML = `<div class="alert-box alert-danger">❌ Cannot reach server at backend API (${API_BASE}). Please verify server is online.</div>`;
+                return;
+            }
+
+            if (!singleResult || singleResult.error) {
+                resultDiv.innerHTML = `<div class="alert-box alert-danger">❌ ${singleResult ? singleResult.error : 'Primary model inference failed.'}</div>`;
+                return;
+            }
+
+            // Enable export PDF button
+            if (pdfBtn) pdfBtn.disabled = false;
+            if (singleResult.gradcam_image) {
+                currentGradCAMData = singleResult.gradcam_image;
+            }
+
+            // STEP 2: Run 9-Model Ensemble Benchmark Sequentially with Grad-CAM Disabled
+            const ALL_MODELS = [
+                "EfficientNetB0", "EfficientNetB1", "EfficientNetB2", "EfficientNetB3", "EfficientNetB4",
+                "DenseNet121", "MobileNetV2", "ResNet18", "ResNet50"
+            ];
+
+            const ensembleResults = [];
+
+            for (let i = 0; i < ALL_MODELS.length; i++) {
+                const mName = ALL_MODELS[i];
+                resultDiv.innerHTML = `
+                    <div class="alert-box alert-info">
+                        <span>⏳ Step 2/2: Running 9-Model Benchmark — ${mName} (${i + 1}/${ALL_MODELS.length})...</span>
+                    </div>`;
+
+                const fd = new FormData();
+                fd.append("model", mName);
+                fd.append("image", file);
+                fd.append("gradcam", "false");
+
+                let rJson = null;
+                let ok = false;
+
+                // Try request with retry on temporary network failure
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 sec timeout
+                        const r = await fetch(`${API_BASE}/predict`, { method: "POST", body: fd, signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (r.ok) {
+                            rJson = await r.json();
+                            if (rJson && !rJson.error) {
+                                ok = true;
+                                break;
+                            }
+                        }
+                    } catch (err) {
+                        console.warn(`Attempt ${attempt + 1} for ${mName} failed:`, err);
+                    }
+                }
+
+                if (ok && rJson) {
+                    ensembleResults.push({ model: mName, prediction: rJson.prediction, confidence: rJson.confidence, ok: true });
+                } else {
+                    ensembleResults.push({ model: mName, prediction: "Unavailable", confidence: 0, ok: false });
+                }
+            }
+
+            // Render Final Comprehensive Report
+            const labelName = DISPLAY_MAP[singleResult.prediction] || singleResult.prediction;
+
+            let html = `
+            <div id="pdf-report-container" style="background:var(--bg-card); padding:24px; border-radius:var(--radius-lg); border:1px solid var(--border-color);">
+                
+                <!-- Report Header -->
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+                    <div>
+                        <div style="font-size:16px; font-weight:800; color:var(--text-heading);">📋 Comprehensive Diagnostic & Ensemble Report</div>
+                        <div style="font-size:12px; color:var(--text-muted);">Timestamp: ${new Date().toLocaleString()}</div>
+                    </div>
+                </div>`;
+
+            // Grad-CAM Side-by-Side Images
+            if (singleResult.gradcam_image) {
+                html += `
+                <div style="margin: 20px 0;">
+                    <div style="font-size:13px; font-weight:700; color:var(--text-heading); margin-bottom:10px;">
+                        🔍 Explainable AI · Side-by-Side Original Input & Grad-CAM Attention Heatmap
+                    </div>
+                    <div class="gradcam-container">
+                        <div class="gradcam-card">
+                            <div class="gradcam-card-title">Uploaded Ultrasound Image</div>
+                            <img src="${inputUrl}" class="gradcam-image" alt="Input Image">
+                        </div>
+                        <div class="gradcam-card">
+                            <div class="gradcam-card-title accent">Grad-CAM Attention Heatmap</div>
+                            <img src="${singleResult.gradcam_image}" class="gradcam-image" alt="Grad-CAM Heatmap">
+                        </div>
+                    </div>
+                </div>`;
+            }
+
+            // Single Model Probability Distribution HTML
+            let distHtml = `<div style="font-size:13px; font-weight:700; color:var(--text-heading); margin-bottom:12px;">Probability Distribution (${modelName})</div>`;
+            Object.keys(singleResult.distribution).forEach(cls => {
+                const pct = singleResult.distribution[cls].toFixed(1);
+                const isTop = cls === singleResult.prediction;
+                distHtml += `
+                <div class="dist-row">
+                    <div class="dist-meta">
+                        <span>${DISPLAY_MAP[cls] || cls}</span>
+                        <span>${pct}%</span>
+                    </div>
+                    <div class="dist-bar-track">
+                        <div class="dist-bar-fill ${isTop ? 'top-class' : ''}" style="width: ${pct}%"></div>
+                    </div>
+                </div>`;
+            });
+
+            // Ensemble Comparison Table HTML
+            let ensembleHtml = `
+            <div style="font-size:13px; font-weight:700; color:var(--text-heading); margin-bottom:12px;">
+                📊 Ensemble Benchmark: All 9 Architectures Comparison
+            </div>
+            <table style="width:100%; border-collapse:collapse; background:var(--bg-input); border-radius:var(--radius-md); overflow:hidden;">
+                <thead>
+                    <tr style="border-bottom:2px solid var(--border-color); text-align:left; background:var(--bg-card-hover);">
+                        <th style="padding:10px; color:var(--text-heading); font-size:12px;">Model Architecture</th>
+                        <th style="padding:10px; color:var(--text-heading); font-size:12px;">Predicted Diagnosis</th>
+                        <th style="padding:10px; color:var(--text-heading); font-size:12px;">Confidence Score</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            ensembleResults.forEach(r => {
+                const predLbl = r.ok ? (DISPLAY_MAP[r.prediction] || r.prediction) : "Unavailable";
+                const isSelected = r.model === modelName;
+                const confText = r.ok ? `${r.confidence.toFixed(1)}%` : "N/A";
+                ensembleHtml += `
+                <tr style="border-bottom:1px solid var(--border-color); ${isSelected ? 'background:rgba(161,138,115,0.25);' : ''}">
+                    <td style="padding:8px 10px; font-size:12px; font-weight:700; color:var(--text-heading);">${r.model} ${isSelected ? '⚡ (Selected)' : ''}</td>
+                    <td style="padding:8px 10px; font-size:12px;">${predLbl}</td>
+                    <td style="padding:8px 10px; font-size:12px; font-weight:700; color:var(--primary-text);">${confText}</td>
+                </tr>`;
+            });
+            ensembleHtml += `</tbody></table>`;
+
+            // Render Probability Distribution & Ensemble Benchmark side-by-side
+            html += `
+            <div class="results-side-by-side" style="display:grid; grid-template-columns: 1fr 1.2fr; gap:20px; margin-top:20px; align-items:start;">
+                <div style="background:var(--bg-input); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">${distHtml}</div>
+                <div style="background:var(--bg-input); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">${ensembleHtml}</div>
+            </div></div>`;
+            resultDiv.innerHTML = html;
+        }
+
+        // Download Grad-CAM Image Handler
+        function downloadGradCAMImage() {
+            if (!currentGradCAMData) {
+                alert("Please run diagnostic analysis first to generate a Grad-CAM heatmap.");
+                return;
+            }
+            const link = document.createElement("a");
+            link.href = currentGradCAMData;
+            link.download = "GBC_GradCAM_Heatmap.png";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Download Clinical PDF Report Handler with Dual Export Engine
+        async function downloadPDFReport() {
+            const reportElem = document.getElementById("pdf-report-container");
+            if (!reportElem) {
+                alert("Please upload an image and run diagnostic analysis first.");
+                return;
+            }
+
+            // 1. Client-side PDF Export via HTML Canvas (jsPDF + html2canvas)
+            if (window.jspdf && window.jspdf.jsPDF && window.html2canvas) {
+                try {
+                    const { jsPDF } = window.jspdf;
+                    const canvas = await html2canvas(reportElem, {
+                        scale: 2,
+                        useCORS: true,
+                        allowTaint: true,
+                        logging: false,
+                        backgroundColor: "#101010"
+                    });
+
+                    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+                    const pdf = new jsPDF({
+                        orientation: "portrait",
+                        unit: "px",
+                        format: [canvas.width, canvas.height]
+                    });
+
+                    pdf.addImage(imgData, "JPEG", 0, 0, canvas.width, canvas.height);
+                    pdf.save("GBC_Ultrasound_Clinical_Report.pdf");
+                    return;
+                } catch (err) {
+                    console.warn("HTML2Canvas PDF generation warning, falling back to print engine", err);
+                }
+            }
+
+            // 2. High-Reliability Native Browser Print Engine
+            window.print();
+        }
+
+        function changePalette(paletteId) {
+            document.documentElement.setAttribute("data-palette", paletteId);
+            localStorage.setItem("palette", paletteId);
+        }
+
+        // Init status & palette on load
+        document.addEventListener("DOMContentLoaded", function () {
+            const savedP = localStorage.getItem("palette") || "4";
+            document.documentElement.setAttribute("data-palette", savedP);
+        });
+
+        loadStatus();
+    </script>
+</body>
+
+</html>
