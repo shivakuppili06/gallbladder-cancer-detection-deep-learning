@@ -721,6 +721,7 @@
         }        let modelStatus = {};
         let currentGradCAMData = null;
         let analysisRunning = false;
+        let activeRequests = 0;
 
         const DISPLAY_MAP = {
             "abn": "Abnormal (Wall Thickening)",
@@ -729,6 +730,22 @@
             "nml": "Normal Gallbladder",
             "stn": "Gallstone Disease"
         };
+
+        // Enforce strict single active network request at any time
+        async function safePredictFetch(url, options) {
+            activeRequests++;
+            console.log("ACTIVE REQUESTS:", activeRequests);
+            if (activeRequests > 1) {
+                console.error("CRITICAL ERROR: ACTIVE REQUESTS EXCEEDED 1!", activeRequests);
+            }
+            try {
+                const response = await fetch(url, options);
+                return response;
+            } finally {
+                activeRequests--;
+                console.log("ACTIVE REQUESTS:", activeRequests);
+            }
+        }
 
         // Fetch Backend System Health Status
         async function loadStatus() {
@@ -771,7 +788,10 @@
 
         // Unified Single & Ensemble Sequential Inference Engine
         async function runSingleAndEnsemble() {
-            if (analysisRunning) return;
+            if (analysisRunning) {
+                console.warn("Analysis already running; ignoring duplicate request.");
+                return;
+            }
 
             const fileInput = document.getElementById("single-file");
             const resultDiv = document.getElementById("single-result");
@@ -796,6 +816,7 @@
                 const inputUrl = URL.createObjectURL(file);
 
                 // STEP 1: Run Primary Model with Grad-CAM Enabled
+                console.log("START PRIMARY:", modelName);
                 resultDiv.innerHTML = `
                     <div class="alert-box alert-info">
                         <span>⏳ Step 1/2: Analyzing Primary Model (${modelName}) with Grad-CAM...</span>
@@ -808,11 +829,14 @@
 
                 let singleResult = null;
                 try {
-                    const singleRes = await fetch(`${API_BASE}/predict`, { method: "POST", body: fdSingle });
+                    const singleRes = await safePredictFetch(`${API_BASE}/predict`, { method: "POST", body: fdSingle });
                     singleResult = await singleRes.json();
                 } catch (e) {
+                    console.error("Primary model request error:", e);
                     resultDiv.innerHTML = `<div class="alert-box alert-danger">❌ Cannot reach the AI backend. Please try again.</div>`;
                     return;
+                } finally {
+                    console.log("END PRIMARY:", modelName);
                 }
 
                 if (!singleResult || singleResult.error) {
@@ -836,6 +860,7 @@
 
                 for (let i = 0; i < ALL_MODELS.length; i++) {
                     const mName = ALL_MODELS[i];
+                    console.log("START BENCHMARK:", mName);
                     resultDiv.innerHTML = `
                         <div class="alert-box alert-info">
                             <span>⏳ Step 2/2: Running 9-Model Benchmark — ${mName} (${i + 1}/${ALL_MODELS.length})...</span>
@@ -849,23 +874,21 @@
                     let rJson = null;
                     let ok = false;
 
-                    // Try request with retry on temporary network failure
-                    for (let attempt = 0; attempt < 2; attempt++) {
-                        try {
-                            const controller = new AbortController();
-                            const timeoutId = setTimeout(() => controller.abort(), 25000);
-                            const r = await fetch(`${API_BASE}/predict`, { method: "POST", body: fd, signal: controller.signal });
-                            clearTimeout(timeoutId);
-                            if (r.ok) {
-                                rJson = await r.json();
-                                if (rJson && !rJson.error) {
-                                    ok = true;
-                                    break;
-                                }
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 25000);
+                        const r = await safePredictFetch(`${API_BASE}/predict`, { method: "POST", body: fd, signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (r.ok) {
+                            rJson = await r.json();
+                            if (rJson && !rJson.error) {
+                                ok = true;
                             }
-                        } catch (err) {
-                            console.warn(`Attempt ${attempt + 1} for ${mName} failed:`, err);
                         }
+                    } catch (err) {
+                        console.warn(`Benchmark request for ${mName} failed:`, err);
+                    } finally {
+                        console.log("END BENCHMARK:", mName);
                     }
 
                     if (ok && rJson) {
