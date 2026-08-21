@@ -146,6 +146,8 @@ transform = transforms.Compose([
 
 @app.route("/")
 def index():
+    if (BASE_DIR / "frontend" / "index.html").exists():
+        return send_from_directory(BASE_DIR / "frontend", "index.html")
     return send_from_directory(BASE_DIR, "index.html")
 
 
