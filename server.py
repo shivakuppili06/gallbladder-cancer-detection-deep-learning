@@ -53,9 +53,11 @@ if CLASS_NAMES_FILE.exists():
 else:
     CLASS_NAMES = DEFAULT_CLASSES
 
-# LRU Model Cache (Max 2 cached models to keep RAM usage safe for Render free instances)
+import gc
+
+# LRU Model Cache (Max 1 cached model to keep RAM usage under 250MB for Render free instances)
 _model_cache = {}
-MAX_CACHED_MODELS = int(os.environ.get("MAX_CACHED_MODELS", 2))
+MAX_CACHED_MODELS = int(os.environ.get("MAX_CACHED_MODELS", 1))
 
 
 def build_architecture(model_name, num_classes):
@@ -95,6 +97,8 @@ def get_model(model_name):
     if model_name in _model_cache:
         return _model_cache[model_name]
 
+    gc.collect()
+
     num_classes = len(CLASS_NAMES)
     model = build_architecture(model_name, num_classes)
     if model is None:
@@ -111,6 +115,8 @@ def get_model(model_name):
             except Exception:
                 state_dict = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
             model.load_state_dict(state_dict)
+            del state_dict
+            gc.collect()
         except Exception as e:
             warning = f"Error loading checkpoint '{checkpoint_file}': {str(e)}"
     else:
@@ -120,9 +126,10 @@ def get_model(model_name):
     model.eval()
 
     # Evict oldest model if cache size exceeds limit to save memory
-    if len(_model_cache) >= MAX_CACHED_MODELS:
+    while len(_model_cache) >= MAX_CACHED_MODELS:
         oldest_key = next(iter(_model_cache))
         del _model_cache[oldest_key]
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
